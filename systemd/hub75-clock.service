@@ -9,7 +9,7 @@ After=multi-user.target
 
 [Service]
 # Number of chained panels is the last argument.
-ExecStart=/opt/RaspberryPi-HUB75-DP3364S/tools/run-test.sh /opt/RaspberryPi-HUB75-DP3364S/tools/clock 1
+ExecStart=/opt/RaspberryPi-HUB75-DP3364S-Matrix/tools/run-test.sh /opt/RaspberryPi-HUB75-DP3364S-Matrix/tools/clock 1
 Restart=always
 RestartSec=3
 

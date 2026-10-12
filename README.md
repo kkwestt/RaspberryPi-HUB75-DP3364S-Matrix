@@ -50,34 +50,72 @@ uses this value for both data upload and register writes.
 `--led-slowdown-gpio=5` was required on the Pi 4. At 2, the image tore into
 shifted chunks and black pixels showed noise, which looks like lost DCLK edges.
 
-## Build and run
+## Install on a Raspberry Pi
+
+Wiring: shield → panel 1 **IN**; panel 1 **OUT** → panel 2 **IN**, and so on.
+Every panel needs its own 5 V feed. Connect cables with the panel power off.
 
 ```sh
-git clone https://github.com/angyalr/rpi-rgb-led-matrix_pwm_DP3265S.git rpi-rgb-led-matrix-spwm
-cd rpi-rgb-led-matrix-spwm
-git checkout 8e4f9805568dabfc71d1b470846786e1a3e9bc89   # commit the patch was made against
-git apply ../RaspberryPi-HUB75-DP3364S/patches/0001-dp3364s-128x64-support.patch
-make -j4 -C examples-api-use
+git clone https://github.com/kkwestt/RaspberryPi-HUB75-DP3364S-Matrix.git
+cd RaspberryPi-HUB75-DP3364S-Matrix
+./install.sh
+```
 
-cd ../RaspberryPi-HUB75-DP3364S/tools
-for p in static-test clock; do
-  g++ -O2 -I../../rpi-rgb-led-matrix-spwm/include $p.cc -o $p \
-      -L../../rpi-rgb-led-matrix-spwm/lib -lrgbmatrix -lrt -lm -lpthread
-done
+`install.sh` installs `git` and `build-essential` if they are missing. It then
+clones the S-PWM fork into `rpi-rgb-led-matrix-spwm/` at the tested commit
+`8e4f980`, applies the patch, and builds the library plus `tools/static-test`
+and `tools/clock`. It is safe to run again.
 
-sudo ./run-test.sh ./static-test 1   # one panel: geometry / colour test pattern
-sudo ./run-test.sh ./clock 2         # two chained panels: clock with milliseconds
+Run (the last argument is the number of chained panels):
+
+```sh
+sudo tools/run-test.sh tools/static-test 1   # geometry / colour test pattern
+sudo tools/run-test.sh tools/clock 2         # clock with milliseconds on two panels
 ```
 
 - `static-test` draws a 1 px white border and 8x8 corner markers: top-left red,
   top-right green, bottom-left blue, bottom-right white. It also draws three
   horizontal R/G/B gradient bars.
 - `clock` shows `HH:MM:SS.mmm` in the largest monospace font that fits, the date,
-  a border and thin R/G/B gradient bars. Fonts come from `FONT_DIR`, the
-  library's `fonts/` directory.
+  a border and thin R/G/B gradient bars.
+- `run-test.sh` sets all the `SPWM_*` variables and flags described above, and
+  writes the chain length to `/etc/spwm-panel.ini`. The same settings work with
+  the fork's `rpi-rgb-led-matrix-spwm/examples-api-use/demo -D0`.
 
-The same environment variables and flags work with the fork's
-`examples-api-use/demo -D0`.
+### Run at boot
+
+```sh
+sudo cp -r . /opt/RaspberryPi-HUB75-DP3364S-Matrix      # or edit the paths in the unit file
+sudo cp systemd/hub75-clock.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now hub75-clock
+```
+
+Set the number of panels at the end of `ExecStart` in `hub75-clock.service`.
+
+### Recommended Pi settings
+
+- `isolcpus=3` at the end of the single line in `/boot/firmware/cmdline.txt`,
+  then reboot. This reserves core 3 for the refresh thread.
+- If other programs run on the same Pi, pin them to cores 0–2 (for example
+  `CPUAffinity=0 1 2` in their systemd unit). See [Limitations](#limitations).
+- The panels run with `--led-no-hardware-pulse`, so the onboard audio can stay
+  enabled.
+
+### Manual build
+
+```sh
+git clone https://github.com/angyalr/rpi-rgb-led-matrix_pwm_DP3265S.git rpi-rgb-led-matrix-spwm
+cd rpi-rgb-led-matrix-spwm
+git checkout 8e4f9805568dabfc71d1b470846786e1a3e9bc89
+git apply ../patches/0001-dp3364s-128x64-support.patch
+make -j4 -C lib && make -j4 -C examples-api-use
+cd ../tools
+for p in static-test clock; do
+  g++ -O2 -I../rpi-rgb-led-matrix-spwm/include $p.cc -o $p \
+      -L../rpi-rgb-led-matrix-spwm/lib -lrgbmatrix -lrt -lm -lpthread
+done
+```
 
 ## Measured upload rate (Pi 4, slowdown 5)
 
@@ -134,3 +172,8 @@ made no visible difference. Only REG02 is changed.
   [#1866](https://github.com/hzeller/rpi-rgb-led-matrix/issues/1866) and
   [#1821](https://github.com/hzeller/rpi-rgb-led-matrix/issues/1821)
 - Driver tables by [board707/DMD_STM32](https://github.com/board707/DMD_STM32/wiki/Led_drivers)
+
+## License
+
+MIT, see [LICENSE](LICENSE). The patch in `patches/` modifies GPL-2.0 code
+(rpi-rgb-led-matrix) and is therefore distributed under the GPL-2.0.
