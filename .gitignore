@@ -1,0 +1,7 @@
+.DS_Store
+# built by install.sh
+rpi-rgb-led-matrix-spwm/
+tools/static-test
+tools/clock
+# local draft, not part of the repository
+issue-1821-comment.md

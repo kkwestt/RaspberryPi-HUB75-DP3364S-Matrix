@@ -1,0 +1,17 @@
+# Clock on DP3364S HUB75 panels, started at boot.
+# Install (adjust the path if the repository is not in /opt):
+#   sudo cp systemd/hub75-clock.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hub75-clock
+[Unit]
+Description=HUB75 DP3364S clock
+After=multi-user.target
+
+[Service]
+# Number of chained panels is the last argument.
+ExecStart=/opt/RaspberryPi-HUB75-DP3364S/tools/run-test.sh /opt/RaspberryPi-HUB75-DP3364S/tools/clock 1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

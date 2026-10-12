@@ -1,0 +1,161 @@
+diff --git a/lib/spwm-helpers.cc b/lib/spwm-helpers.cc
+index ea30891..7fbade3 100644
+--- a/lib/spwm-helpers.cc
++++ b/lib/spwm-helpers.cc
+@@ -350,6 +350,36 @@ int spwm_get_dp3265s_vsync_latch_clks() {
+   return spwm_vsync_latch_clks;
+ }
+ 
++// Number of scan rows driven on A-E and number of PWM groups (REG03 + 1) for
++// the DP3265S-style ROW scan. The DP3265S 64x32 panel is 1/8 scan; related
++// Depuw chips such as DP3364S on 128x64 panels run 1/32 scan
++// (SPWM_DP3265S_SCAN_ROWS=32 together with REG02=0x021F).
++int spwm_get_dp3265s_scan_rows() {
++  static int spwm_rows = -1;
++  if (spwm_rows < 0) {
++    int spwm_env_value = 0;
++    spwm_rows = 8;
++    if (spwm_parse_env_int("SPWM_DP3265S_SCAN_ROWS", &spwm_env_value) &&
++        spwm_env_value >= 1 && spwm_env_value <= 64) {
++      spwm_rows = spwm_env_value;
++    }
++  }
++  return spwm_rows;
++}
++
++int spwm_get_dp3265s_groups() {
++  static int spwm_groups = -1;
++  if (spwm_groups < 0) {
++    int spwm_env_value = 0;
++    spwm_groups = 64;
++    if (spwm_parse_env_int("SPWM_DP3265S_GROUPS", &spwm_env_value) &&
++        spwm_env_value >= 1 && spwm_env_value <= 128) {
++      spwm_groups = spwm_env_value;
++    }
++  }
++  return spwm_groups;
++}
++
+ int spwm_get_dp3265s_vsync_mode() {
+   static bool spwm_loaded = false;
+   static int spwm_vsync_mode = 2;  // 0=off, 1=first data latch, 2=pre-upload
+@@ -434,8 +464,9 @@ class SPWM_Display_Scan_Thread : public Thread {
+       }
+       io_->ClearBits(h_.output_enable);
+ 
+-      spwm_row = (spwm_row + 1) & 0x07;
+-      spwm_group_row = (spwm_group_row + 1) % (64 * 8);
++      spwm_row = (spwm_row + 1) % spwm_get_dp3265s_scan_rows();
++      spwm_group_row = (spwm_group_row + 1) %
++          (spwm_get_dp3265s_groups() * spwm_get_dp3265s_scan_rows());
+     }
+   }
+ 
+@@ -1766,11 +1797,27 @@ SPWM_Pixel_Block_GPIO_Bits spwm_repack_pixel_block_gpio_bits(
+ 
+   const int spwm_clamped_pwm_bits =
+       spwm_pwm_bits > SPWM_WORD_BIT_COUNT ? SPWM_WORD_BIT_COUNT : spwm_pwm_bits;
+-  const int spwm_word_bit_base = SPWM_WORD_BIT_COUNT - spwm_clamped_pwm_bits;
++  // SPWM_GRAY_BITS: how many low bits of the 16-bit word the driver actually
++  // displays (e.g. DP3364S with REG03=REG04=0x3F shows 64*64 = 4096 levels,
++  // i.e. 12 bits). The pixel value is MSB-aligned to that width; source bits
++  // that do not fit are dropped from the bottom. Default 16 = previous
++  // behaviour (MSB-aligned to the full word).
++  static int spwm_gray_bits = -1;
++  if (spwm_gray_bits < 0) {
++    int spwm_env_value = 0;
++    spwm_gray_bits = SPWM_WORD_BIT_COUNT;
++    if (spwm_parse_env_int("SPWM_GRAY_BITS", &spwm_env_value) &&
++        spwm_env_value >= 1 && spwm_env_value <= SPWM_WORD_BIT_COUNT) {
++      spwm_gray_bits = spwm_env_value;
++    }
++  }
++  const int spwm_word_bit_base = spwm_gray_bits - spwm_clamped_pwm_bits;
+   for (int spwm_source_bit = 0;
+        spwm_source_bit < spwm_clamped_pwm_bits;
+        ++spwm_source_bit) {
+-    spwm_block_gpio_bits.word_gpio_bits[spwm_word_bit_base + spwm_source_bit] =
++    const int spwm_target_bit = spwm_word_bit_base + spwm_source_bit;
++    if (spwm_target_bit < 0) continue;
++    spwm_block_gpio_bits.word_gpio_bits[spwm_target_bit] =
+         spwm_pixel_base[spwm_source_bit * spwm_bitplane_stride] & spwm_rgb_mask;
+   }
+ 
+@@ -2343,8 +2390,9 @@ void spwm_dp3265s_display_scan(GPIO *io, const HardwareMapping &h,
+     }
+     io->ClearBits(h.output_enable);
+ 
+-    spwm_dp3265s_row = (spwm_dp3265s_row + 1) & 0x07;
+-    spwm_dp3265s_group_row = (spwm_dp3265s_group_row + 1) % (64 * 8);
++    spwm_dp3265s_row = (spwm_dp3265s_row + 1) % spwm_get_dp3265s_scan_rows();
++    spwm_dp3265s_group_row = (spwm_dp3265s_group_row + 1) %
++        (spwm_get_dp3265s_groups() * spwm_get_dp3265s_scan_rows());
+   }
+ }
+ 
+@@ -3011,6 +3059,32 @@ void spwm_dump_to_matrix(GPIO *io, const HardwareMapping &h,
+   // SRAM/SPWM panels should not receive the configuration stream every frame:
+   // on some chips those register writes can also leave visible data in SRAM.
+   static bool spwm_spwm_init_done = false;
++  // Optional periodic re-init (SPWM_REINIT_MS > 0): the driver chips lose
++  // their configuration when the panel power or the cable glitches while the
++  // Pi keeps running, and stay dark until the registers are written again.
++  {
++    static int spwm_reinit_ms = -1;
++    static struct timespec spwm_last_init = {0, 0};
++    if (spwm_reinit_ms < 0) {
++      int spwm_env_value = 0;
++      spwm_reinit_ms = 0;
++      if (spwm_parse_env_int("SPWM_REINIT_MS", &spwm_env_value) &&
++          spwm_env_value > 0) {
++        spwm_reinit_ms = spwm_env_value;
++      }
++    }
++    if (spwm_reinit_ms > 0) {
++      struct timespec spwm_now;
++      clock_gettime(CLOCK_MONOTONIC, &spwm_now);
++      const int64_t spwm_elapsed_ms =
++          (spwm_now.tv_sec - spwm_last_init.tv_sec) * 1000LL +
++          (spwm_now.tv_nsec - spwm_last_init.tv_nsec) / 1000000LL;
++      if (!spwm_spwm_init_done || spwm_elapsed_ms >= spwm_reinit_ms) {
++        spwm_spwm_init_done = false;
++        spwm_last_init = spwm_now;
++      }
++    }
++  }
+   const bool spwm_skip_init =
+       spwm_oe_style_init_once(spwm_oe_style) && spwm_spwm_init_done;
+   if (!spwm_continuous_scan) {
+diff --git a/lib/spwm-panel-config.cc b/lib/spwm-panel-config.cc
+index 839fa2c..bbec427 100644
+--- a/lib/spwm-panel-config.cc
++++ b/lib/spwm-panel-config.cc
+@@ -403,6 +403,15 @@ SPWM_Config spwm_create_dp3265s_config(const SPWM_Panel_Settings &cfg, int cols)
+   int spwm_target_igain_tenths = -1;
+   regs[7] = spwm_apply_dp3265s_igain_env(
+       regs[7], &spwm_brightness_percent, &spwm_target_igain_tenths);
++  // Allow overriding every register for related Depuw chips (e.g. DP3364S),
++  // whose scan-line count (REG02) differs from the DP3265S default.
++  regs[0] = spwm_apply_u16_env("SPWM_DP3265S_REG01", regs[0]);
++  regs[1] = spwm_apply_u16_env("SPWM_DP3265S_REG02", regs[1]);
++  regs[2] = spwm_apply_u16_env("SPWM_DP3265S_REG03", regs[2]);
++  regs[3] = spwm_apply_u16_env("SPWM_DP3265S_REG04", regs[3]);
++  regs[4] = spwm_apply_u16_env("SPWM_DP3265S_REG05", regs[4]);
++  regs[5] = spwm_apply_u16_env("SPWM_DP3265S_REG06", regs[5]);
++  regs[6] = spwm_apply_u16_env("SPWM_DP3265S_REG07", regs[6]);
+   regs[7] = spwm_apply_u16_env("SPWM_DP3265S_REG08", regs[7]);
+   regs[8] = spwm_apply_u16_env("SPWM_DP3265S_REG09", regs[8]);
+   regs[9] = spwm_apply_u16_env("SPWM_DP3265S_REG0A", regs[9]);
+@@ -414,10 +423,10 @@ SPWM_Config spwm_create_dp3265s_config(const SPWM_Panel_Settings &cfg, int cols)
+     fprintf(stderr,
+             "[dp3265s] brightness=%ld, target_igain=%.1f%%, "
+             "REG08=0x%04x, REG09=0x%04x, REG0A=0x%04x, "
+-            "REG0B=0x%04x, REG0C=0x%04x, REG0D=0x%04x\n",
++            "REG0B=0x%04x, REG0C=0x%04x, REG0D=0x%04x, REG02=0x%04x\n",
+             spwm_brightness_percent,
+             spwm_target_igain_tenths / 10.0,
+-            regs[7], regs[8], regs[9], regs[10], regs[11], regs[12]);
++            regs[7], regs[8], regs[9], regs[10], regs[11], regs[12], regs[1]);
+   }
+ 
+   c.spwm_add_register(1,  {regs[0]}, &SPWM_DP3265S_REGISTER_TIMINGS[0]);
