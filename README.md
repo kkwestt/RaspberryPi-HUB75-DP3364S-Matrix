@@ -11,6 +11,11 @@ themselves after a power or cable glitch. One known limitation remains: the
 brightness flickers while the same Pi runs other memory-heavy work (see
 [Limitations](#limitations)).
 
+<img src="matrix-hub75-rpi.jpg" width="480" alt="Two chained 128x64 DP3364S panels showing the tools/clock demo, driven by a Raspberry Pi 4 with the iarduino RGB Matrix HAT">
+
+*Two chained 128x64 DP3364S panels (256x64) running `tools/clock`, driven by a
+Raspberry Pi 4 with the iarduino RGB Matrix HAT.*
+
 ## Hardware
 
 | Part | Details |
