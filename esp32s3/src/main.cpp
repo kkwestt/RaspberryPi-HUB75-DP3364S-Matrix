@@ -351,12 +351,7 @@ static void handle_status() {
   d["remaining"] = static_cast<long long>(cs.remaining);
   d["countdown_phase"] = static_cast<int>(cs.phase);
   d["frame_rate"] = display.frameRate();
-  // diagnostics: does the output really run? (pin activity + DMA/LCD registers)
-  uint32_t tg[14], hi[14];
-  Dp3364sDisplay::pinActivity(kPins, tg, hi, 5000);
-  JsonObject pins = d["pins"].to<JsonObject>();
-  static const char *names[14] = {"R1", "G1", "B1", "R2", "G2", "B2", "A", "B", "C", "D", "E", "LAT", "OE", "CLK"};
-  for (int i = 0; i < 14; ++i) pins[names[i]] = tg[i];
+  // diagnostics: DMA/LCD registers
   d["hw"] = Dp3364sDisplay::debugState();
   d["display_ok"] = display_ok;
   d["output_restarts"] = display.restarts();
@@ -555,12 +550,6 @@ void loop() {
                   display_ok ? "ok" : "FAIL", display.error(), display.width(), display.height(),
                   display.frameRate(), ESP.getPsramSize(), ESP.getFreePsram(), WiFi.status(),
                   WiFi.localIP().toString().c_str(), time_valid(), g_visitors, visitors_stale());
-    static const char *names[14] = {"R1", "G1", "B1", "R2", "G2", "B2", "A", "B", "C", "D", "E", "LAT", "OE", "CLK"};
-    uint32_t tg[14], hi[14];
-    Dp3364sDisplay::pinActivity(kPins, tg, hi, 20000);
-    Serial.print("[pins] toggles/high% ");
-    for (int i = 0; i < 14; ++i) Serial.printf("%s=%u/%u ", names[i], tg[i], hi[i] * 100 / 20000);
-    Serial.println();
     Serial.printf("[hw] %s\n", Dp3364sDisplay::debugState());
   }
 

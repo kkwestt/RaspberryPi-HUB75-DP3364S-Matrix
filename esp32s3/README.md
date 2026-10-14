@@ -14,7 +14,10 @@ The example application is a stand display for two chained panels (256x64):
 
 - **left panel:** a number fetched from a Raspberry Pi over HTTP (people who
   stayed at the stand for 10 s);
-- **right panel:** time elapsed since a start moment set on the web page;
+- **right panel:** time elapsed since a start moment set on the web page, or a
+  countdown to it while the moment is in the future;
+- a WS2812 LED (GPIO 21) lights up for a set time (0-60 s, any colour) when the
+  number goes up;
 - NTP time, re-synced every hour;
 - web settings, OTA updates, watchdog.
 
@@ -56,10 +59,12 @@ levels).
 Registers (REG01-0D): `0x1100 0x021F 0x033F 0x043F 0x0504 0x0642 0x0700 0x08BF
 0x0960 0x0ABE 0x0B8B 0x0C08 0x0D12`.
 
-The output loop is [SDR command + 13 register writes] → frame x 16 → repeat.
-Rewriting the registers about 4 times a second lets the panels recover by
-themselves after a power or cable glitch. The SDR command (LAT 15 clocks)
-selects single-edge clocking, which is undefined after power-on.
+The output loop is [13 register writes] → frame x 16 → repeat. Rewriting the
+registers about 4 times a second lets the panels recover by themselves after a
+power or cable glitch.
+
+Do **not** send the SDR command (LAT high for 15 clocks) described in the
+datasheet: on these panels it blanks the display.
 
 ## Hardware
 
@@ -113,5 +118,8 @@ Set your own `OTA_PASSWORD` in `secrets.h`. The default is `stand-display`.
 - task watchdog (30 s);
 - reboot if the display does not start, or after 15 min without Wi-Fi;
 - a 3 s delay before the output starts, so the panel power settles;
+- after a cold power-up the LCD peripheral sometimes stops by itself; the
+  firmware checks it every 2 s and reboots if it has stopped (the panels may
+  blink a few times at power-on);
 - the last value received from the Pi is kept in flash and shown while the Pi
   is unreachable (with a small yellow dot in the corner).

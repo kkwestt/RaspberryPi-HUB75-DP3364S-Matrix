@@ -56,7 +56,6 @@ void route_pin(int pin, int signal) {
   gpio_set_direction(static_cast<gpio_num_t>(pin), GPIO_MODE_OUTPUT);
   gpio_set_drive_capability(static_cast<gpio_num_t>(pin), GPIO_DRIVE_CAP_3);
   esp_rom_gpio_connect_out_signal(pin, signal, false, false);
-  // (input readback disabled)
 }
 
 }  // namespace
@@ -70,21 +69,8 @@ void Dp3364sDisplay::writeBackCache(void *p, size_t bytes) {
 #endif
 }
 
-// SDR command (DP3364S datasheet 10.1/10.3): LAT high for 15 clocks puts the
-// driver into single-edge clock mode. After power-on the mode is undefined, so
-// it is sent before every register refresh; in SDR mode it changes nothing.
-constexpr size_t kSdrWords = 0;  // SDR command disabled: it blanked the panels
-
-static size_t build_sdr(uint16_t *out) {
-  size_t n = 0;
-  for (int i = 0; i < 3; ++i) out[n++] = 0;
-  for (int i = 0; i < 15; ++i) out[n++] = dp3364s::BIT_LAT;
-  for (int i = 0; i < 3; ++i) out[n++] = 0;
-  return n;
-}
-
 void Dp3364sDisplay::buildRegisters() {
-  size_t n = 0;  // no SDR prefix
+  size_t n = 0;
   for (int r = 0; r < dp3364s::DEFAULT_REGISTER_COUNT; ++r)
     n += dp3364s::build_register_block(regs_buf_ + n, layout_, registers_[r]);
 }
@@ -101,7 +87,7 @@ bool Dp3364sDisplay::begin(const Hub75Pins &pins, int panels, uint32_t pclk_hz, 
   const size_t raw = layout_.frame_words();
   layout_.pad_end = static_cast<int>((32 - raw % 32) % 32);
   frame_words_ = layout_.frame_words();
-  regs_words_ = kSdrWords + layout_.register_block_words() * dp3364s::DEFAULT_REGISTER_COUNT;
+  regs_words_ = layout_.register_block_words() * dp3364s::DEFAULT_REGISTER_COUNT;
   if (regs_words_ % 2) ++regs_words_;  // keep byte size a multiple of 4
 
   const size_t frame_bytes = frame_words_ * 2, regs_bytes = regs_words_ * 2;
@@ -264,19 +250,6 @@ void Dp3364sDisplay::setCurrentGain(uint8_t value) {
   if (regs_buf_) buildRegisters();
 }
 
-void Dp3364sDisplay::pinActivity(const Hub75Pins &pins, uint32_t toggles[14], uint32_t highs[14], int samples) {
-  const int8_t p[14] = {pins.r1, pins.g1, pins.b1, pins.r2, pins.g2, pins.b2, pins.a,
-                        pins.b,  pins.c,  pins.d,  pins.e,  pins.lat, pins.oe, pins.clk};
-  int last[14];
-  for (int i = 0; i < 14; ++i) { toggles[i] = highs[i] = 0; last[i] = gpio_get_level(static_cast<gpio_num_t>(p[i])); }
-  for (int n = 0; n < samples; ++n) {
-    for (int i = 0; i < 14; ++i) {
-      const int v = gpio_get_level(static_cast<gpio_num_t>(p[i]));
-      if (v != last[i]) { ++toggles[i]; last[i] = v; }
-      highs[i] += v;
-    }
-  }
-}
 
 const char *Dp3364sDisplay::debugState() {
   static char buf[200];

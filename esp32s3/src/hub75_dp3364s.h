@@ -49,8 +49,6 @@ class Dp3364sDisplay {
   uint32_t frameRate() const;  // full frames per second at the configured CLK
 
   // Diagnostics: sample the 14 pins (R1..B2, A..E, LAT, OE, CLK) and count
-  // level changes / high samples, to verify the signals leave the chip.
-  static void pinActivity(const Hub75Pins &pins, uint32_t toggles[14], uint32_t highs[14], int samples);
   const char *error() const { return error_; }
   static const char *debugState();  // GDMA / LCD_CAM registers for the log
 
