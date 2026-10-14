@@ -16,6 +16,16 @@ brightness flickers while the same Pi runs other memory-heavy work (see
 *Two chained 128x64 DP3364S panels (256x64) running `tools/clock`, driven by a
 Raspberry Pi 4 with the iarduino RGB Matrix HAT.*
 
+## ESP32-S3 version (flicker-free)
+
+On a Raspberry Pi that also does heavy work (video decoding, neural networks),
+the bit-banged CLK makes DP3364S panels flicker (see [Limitations](#limitations)).
+[`esp32s3/`](esp32s3/) contains a driver for an **ESP32-S3** that outputs
+the same stream through hardware DMA (LCD_CAM), so the CLK never varies. The
+generator is verified bit-for-bit against the stream captured from this
+Raspberry Pi setup. It is tested with two chained panels on the same iarduino
+HAT.
+
 ## Hardware
 
 | Part | Details |
